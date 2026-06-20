@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>UPI Offline Mesh — Demo</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            margin: 0; padding: 24px; background: #0d1117; color: #e6edf3;
+            font-size: 14px;
+        }
+        h1 { margin-top: 0; color: #f0f6fc; font-size: 22px; }
+        h2 {
+            color: #58a6ff; border-bottom: 1px solid #30363d;
+            padding-bottom: 6px; margin-top: 28px; margin-bottom: 12px;
+            font-size: 15px; font-weight: 600;
+        }
+        .container { max-width: 1280px; margin: 0 auto; }
+        .grid { display: grid; gap: 16px; }
+        .grid-2 { grid-template-columns: 1fr 1fr; }
+        .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 18px; }
+        .stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; text-align: center; }
+        .stat-value { font-size: 28px; font-weight: 700; color: #58a6ff; }
+        .stat-label { font-size: 12px; color: #8b949e; margin-top: 4px; text-transform: uppercase; letter-spacing: .04em; }
+        .device { border: 1px solid #30363d; border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; background: #0d1117; }
+        .device.bridge { border-color: #2ea043; background: #052e16; }
+        .device-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+        .badge-online { background: #2ea043; color: white; }
+        .badge-offline { background: #21262d; color: #8b949e; border: 1px solid #30363d; }
+        .packet-id { font-family: 'Consolas','Monaco',monospace; font-size: 11px; background: #21262d; padding: 2px 7px; border-radius: 4px; margin: 2px; display: inline-block; color: #79c0ff; }
+        /* BUG FIX (root cause #3 frontend side): real per-packet TTL dots */
+        .ttl-row { display: flex; align-items: center; gap: 6px; margin-top: 5px; font-size: 11px; color: #8b949e; }
+        .ttl-dots { display: flex; gap: 3px; }
+        .ttl-dot { width: 9px; height: 9px; border-radius: 50%; background: #2ea043; }
+        .ttl-dot.dead { background: #21262d; border: 1px solid #30363d; }
+        button { background: #21262d; color: #e6edf3; border: 1px solid #30363d; padding: 7px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; margin: 3px; transition: background .15s, border-color .15s; }
+        button:hover { background: #2d333b; border-color: #8b949e; }
+        button:active { transform: scale(.98); }
+        button.primary { background: #238636; color: white; border-color: #2ea043; }
+        button.primary:hover { background: #2ea043; }
+        button.secondary { background: #1f6feb; color: white; border-color: #388bfd; }
+        button.secondary:hover { background: #388bfd; }
+        button.danger { background: #da3633; color: white; border-color: #f85149; }
+        button.danger:hover { background: #f85149; }
+        button:disabled { opacity: .5; cursor: not-allowed; }
+        input, select { background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 7px 10px; font-size: 13px; margin: 3px; }
+        input:focus, select:focus { outline: none; border-color: #58a6ff; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid #21262d; }
+        th { color: #8b949e; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: rgba(255,255,255,.02); }
+        /* BUG FIX: added REJECTED / INVALID colours (were missing, status text showed unstyled) */
+        .status-SETTLED { color: #56d364; font-weight: 600; }
+        .status-REJECTED { color: #f85149; font-weight: 600; }
+        .status-DUPLICATE_DROPPED { color: #d29922; font-weight: 600; }
+        .status-INVALID { color: #ff7b72; font-weight: 600; }
+        .balance { font-family: 'Consolas','Monaco',monospace; color: #56d364; font-weight: 600; }
+        #log { background: #010409; color: #7ee787; padding: 12px 14px; border-radius: 8px; font-family: 'Consolas','Monaco',monospace; font-size: 12px; max-height: 240px; overflow-y: auto; white-space: pre-wrap; border: 1px solid #30363d; line-height: 1.6; }
+        /* BUG FIX: visible error banner instead of silent console.error (root cause #4) */
+        #error-banner { display: none; background: #3d1a1a; border: 1px solid #f85149; color: #f85149; padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; }
+        .controls { background: #161b22; padding: 18px; border-radius: 10px; border: 1px solid #30363d; margin-bottom: 16px; }
+        .step { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid #21262d; }
+        .step:last-of-type { border-bottom: none; }
+        .step-num { display: inline-flex; align-items: center; justify-content: center; background: #58a6ff; color: #0d1117; border-radius: 50%; width: 24px; height: 24px; font-weight: 700; font-size: 12px; flex-shrink: 0; }
+        .step-label { font-weight: 600; min-width: 160px; }
+        .hint { font-size: 12px; color: #8b949e; }
+        .mono { font-family: 'Consolas','Monaco',monospace; }
+        .small { font-size: 12px; color: #8b949e; }
+        .section-header { display: flex; align-items: center; justify-content: space-between; }
+        #cache-info { font-size: 12px; color: #8b949e; margin-top: 8px; }
+        .spinner { display: none; width: 14px; height: 14px; border: 2px solid #30363d; border-top-color: #58a6ff; border-radius: 50%; animation: spin .7s linear infinite; margin-left: 8px; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📡 UPI Offline Mesh — Live Demo</h1>
+    <p class="small" style="margin-bottom: 20px;">
+        Send money with zero internet. Packets encrypted with RSA+AES gossip phone-to-phone
+        until a bridge node gets 4G and uploads them here.
+    </p>
+
+    <div id="error-banner"></div>
+
+    <!-- Stats -->
+    <div class="grid grid-4" style="margin-bottom: 16px;">
+        <div class="stat-card"><div class="stat-value" id="s-devices">5</div><div class="stat-label">Devices</div></div>
+        <div class="stat-card"><div class="stat-value" id="s-packets">0</div><div class="stat-label">Packets in flight</div></div>
+        <div class="stat-card"><div class="stat-value" id="s-settled">0</div><div class="stat-label">Settled</div></div>
+        <div class="stat-card"><div class="stat-value" id="s-cache">0</div><div class="stat-label">Idempotency cache</div></div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+        <h2 style="margin-top:0; border:none; padding:0; margin-bottom:8px;">🎬 Demo Flow</h2>
+
+        <div class="step">
+            <span class="step-num">1</span>
+            <span class="step-label">Compose payment</span>
+            <select id="senderVpa">
+                <option>alice@demo</option>
+                <option>bob@demo</option>
+                <option>carol@demo</option>
+            </select>
+            <span style="color:#8b949e;">→</span>
+            <select id="receiverVpa">
+                <option>bob@demo</option>
+                <option>carol@demo</option>
+                <option>alice@demo</option>
+                <option>dave@demo</option>
+            </select>
+            ₹<input type="number" id="amount" value="500" style="width:90px">
+            PIN <input type="text" id="pin" value="1234" style="width:70px" maxlength="4">
+            <button class="primary" onclick="sendPacket()">📤 Inject into Mesh</button>
+        </div>
+
+        <div class="step">
+            <span class="step-num">2</span>
+            <span class="step-label">Gossip round</span>
+            <button class="secondary" onclick="gossip()">🔄 Run Gossip Round</button>
+            <span class="hint">packets hop device-to-device, TTL decrements each hop</span>
+        </div>
+
+        <div class="step">
+            <span class="step-num">3</span>
+            <span class="step-label">Bridge hits 4G</span>
+            <button class="secondary" onclick="flushBridges()">📡 Bridges Upload to Backend</button>
+            <span class="hint">runs in parallel — exercises concurrent idempotency</span>
+        </div>
+
+        <div class="step" style="border:none; padding-bottom:0;">
+            <button class="danger" onclick="resetMesh()">🗑 Reset Mesh + Cache</button>
+            <span class="hint">clears all devices and the idempotency cache</span>
+            <span class="spinner" id="spinner"></span>
+        </div>
+    </div>
+
+    <!-- Devices + Accounts -->
+    <div class="grid grid-2" style="margin-bottom: 16px;">
+        <div class="card">
+            <h2>📱 Mesh Devices</h2>
+            <div id="devices"><p class="small">Loading...</p></div>
+        </div>
+        <div class="card">
+            <h2>🏦 Account Balances</h2>
+            <table id="accounts-table">
+                <thead><tr><th>VPA</th><th>Holder</th><th>Balance</th></tr></thead>
+                <tbody><tr><td colspan="3" class="small">Loading...</td></tr></tbody>
+            </table>
+            <p id="cache-info"></p>
+        </div>
+    </div>
+
+    <!-- Transaction Ledger -->
+    <div class="card" style="margin-bottom: 16px;">
+        <div class="section-header">
+            <h2 style="margin: 0 0 12px 0;">📜 Transaction Ledger</h2>
+            <span class="small" id="tx-count"></span>
+        </div>
+        <div style="overflow-x: auto;">
+            <table id="tx-table">
+                <thead><tr>
+                    <th>ID</th><th>From</th><th>To</th><th>Amount</th>
+                    <th>Status</th><th>Bridge</th><th>Hops</th><th>Settled At</th>
+                </tr></thead>
+                <tbody><tr><td colspan="8" class="small" style="padding:20px;text-align:center;">Loading...</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Log -->
+    <div class="card">
+        <div class="section-header" style="margin-bottom: 10px;">
+            <h2 style="margin: 0;">🪵 Activity Log</h2>
+            <button onclick="clearLog()" style="font-size:12px; padding: 4px 10px;">Clear</button>
+        </div>
+        <div id="log"></div>
+    </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────
+// Logging helpers
+// ─────────────────────────────────────────────────────────────────────────
+function log(msg) {
+    const el = document.getElementById('log');
+    el.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg + '\n' + el.textContent;
+}
+function clearLog() { document.getElementById('log').textContent = ''; }
+
+// BUG FIX (root cause #4): show errors visibly instead of console.error only.
+// Previously if any fetch failed (server down, port wrong, CORS, etc.) the
+// page simply froze showing stale data with zero indication of why.
+function showError(msg) {
+    const b = document.getElementById('error-banner');
+    b.textContent = '⚠️ ' + msg;
+    b.style.display = 'block';
+    setTimeout(() => { b.style.display = 'none'; }, 6000);
+}
+
+function setLoading(on) {
+    document.getElementById('spinner').style.display = on ? 'inline-block' : 'none';
+}
+
+// BUG FIX (root cause #3 continued): TTL dots now driven by the real ttl
+// value returned per packet from /api/mesh/state (was hardcoded before).
+function renderTtlDots(ttl) {
+    return Array.from({length: 5}, (_, i) =>
+        `<span class="ttl-dot${i >= ttl ? ' dead' : ''}"></span>`
+    ).join('');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Main refresh — fetches all 3 APIs in parallel and rebuilds the UI.
+// BUG FIX (root cause #4): each fetch now checks res.ok and throws with a
+// clear message on failure, caught once and shown via showError() so the
+// dashboard never silently goes stale again.
+// ─────────────────────────────────────────────────────────────────────────
+async function refresh() {
+    let m, accs, txs;
+    try {
+        [m, accs, txs] = await Promise.all([
+            fetch('/api/mesh/state').then(r => { if (!r.ok) throw new Error('mesh/state ' + r.status); return r.json(); }),
+            fetch('/api/accounts').then(r => { if (!r.ok) throw new Error('accounts ' + r.status); return r.json(); }),
+            fetch('/api/transactions').then(r => { if (!r.ok) throw new Error('transactions ' + r.status); return r.json(); })
+        ]);
+    } catch (e) {
+        showError('Refresh failed: ' + e.message + ' — is the server running on this port?');
+        return;
+    }
+
+    // Stats
+    const totalPkts = m.devices.reduce((s, d) => s + d.packetCount, 0);
+    const settled   = txs.filter(t => t.status === 'SETTLED').length;
+    document.getElementById('s-devices').textContent = m.devices.length;
+    document.getElementById('s-packets').textContent = totalPkts;
+    document.getElementById('s-settled').textContent = settled;
+    document.getElementById('s-cache').textContent   = m.idempotencyCacheSize;
+
+    // Devices — BUG FIX: reads d.packets[].ttl (new API field) not the old
+    // d.packetIds[] array that never carried TTL information.
+    document.getElementById('devices').innerHTML = m.devices.map(d => {
+        const pktsHtml = (d.packets || []).map(p =>
+            `<div class="ttl-row">
+                <span class="packet-id">${p.id}</span>
+                <div class="ttl-dots">${renderTtlDots(p.ttl)}</div>
+                <span>TTL ${p.ttl}/5</span>
+             </div>`
+        ).join('');
+        return `<div class="device ${d.hasInternet ? 'bridge' : ''}">
+            <div class="device-header">
+                <strong>${d.deviceId}</strong>
+                <span class="badge ${d.hasInternet ? 'badge-online' : 'badge-offline'}">
+                    ${d.hasInternet ? '🌐 4G Bridge' : '🚫 Offline'}
+                </span>
+                <span class="small">${d.packetCount} packet(s)</span>
+            </div>
+            ${pktsHtml || '<span class="small" style="color:#484f58;">no packets</span>'}
+        </div>`;
+    }).join('');
+
+    document.getElementById('cache-info').textContent =
+        `Idempotency cache: ${m.idempotencyCacheSize} hash(es) stored`;
+
+    // Accounts
+    document.querySelector('#accounts-table tbody').innerHTML = accs.map(a =>
+        `<tr>
+           <td class="mono small">${a.vpa}</td>
+           <td>${a.holderName}</td>
+           <td class="balance">₹${parseFloat(a.balance).toFixed(2)}</td>
+         </tr>`
+    ).join('');
+
+    // Transactions — BUG FIX (root cause #1): t.settledAt is now an epoch-millis
+    // number (fixed in Transaction.java), so new Date(t.settledAt) works correctly
+    // instead of producing "Invalid Date" from the old {epochSecond,nano} object.
+    document.getElementById('tx-count').textContent = `${txs.length} recent`;
+    document.querySelector('#tx-table tbody').innerHTML = txs.length
+        ? txs.map(t => `<tr>
+            <td class="mono small">${t.id}</td>
+            <td class="small">${t.senderVpa}</td>
+            <td class="small">${t.receiverVpa}</td>
+            <td class="balance">₹${parseFloat(t.amount).toFixed(2)}</td>
+            <td class="status-${t.status}">${t.status}</td>
+            <td class="small">${t.bridgeNodeId}</td>
+            <td>${t.hopCount}</td>
+            <td class="small">${new Date(t.settledAt).toLocaleTimeString()}</td>
+          </tr>`).join('')
+        : `<tr><td colspan="8" style="text-align:center;color:#8b949e;padding:20px;">
+            No transactions yet — inject a packet and run steps 1 → 2 → 3 above
+           </td></tr>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Action handlers
+// ─────────────────────────────────────────────────────────────────────────
+async function sendPacket() {
+    const sender   = document.getElementById('senderVpa').value;
+    const receiver = document.getElementById('receiverVpa').value;
+    if (sender === receiver) { showError('Sender and receiver must be different.'); return; }
+    const amount = parseFloat(document.getElementById('amount').value);
+    if (!amount || amount <= 0) { showError('Amount must be a positive number.'); return; }
+
+    const body = { senderVpa: sender, receiverVpa: receiver, amount, pin: document.getElementById('pin').value, ttl: 5, startDevice: 'phone-alice' };
+    try {
+        setLoading(true);
+        const r = await fetch('/api/demo/send', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+        }).then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); });
+
+        log(`📤 Packet ${r.packetId.substring(0,8)}... injected at ${r.injectedAt} (TTL ${r.ttl})`);
+        log(`   ${sender} → ${receiver}  ₹${amount.toFixed(2)}`);
+        log(`   cipher preview: ${r.ciphertextPreview}`);
+        await refresh();
+    } catch (e) {
+        showError('Inject failed: ' + e.message);
+        log('❌ Inject failed: ' + e.message);
+    } finally { setLoading(false); }
+}
+
+async function gossip() {
+    try {
+        setLoading(true);
+        const r = await fetch('/api/mesh/gossip', {method: 'POST'})
+            .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); });
+        const counts = Object.entries(r.deviceCounts)
+            .map(([k,v]) => `${k.split('-').pop()}:${v}`).join('  ');
+        log(`🔄 Gossip: ${r.transfers} transfer(s) — [${counts}]`);
+        await refresh();
+    } catch (e) {
+        showError('Gossip failed: ' + e.message);
+    } finally { setLoading(false); }
+}
+
+async function flushBridges() {
+    try {
+        setLoading(true);
+        const r = await fetch('/api/mesh/flush', {method: 'POST'})
+            .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); });
+
+        log(`📡 ${r.uploadsAttempted} bridge upload(s) attempted:`);
+        if (r.uploadsAttempted === 0) {
+            log('   (no packets held by bridge nodes — run gossip first)');
+        }
+        r.results.forEach(res => {
+            const icon = res.outcome === 'SETTLED' ? '✅'
+                       : res.outcome === 'REJECTED' ? '❌'
+                       : res.outcome === 'DUPLICATE_DROPPED' ? '⚠️' : '🔴';
+            log(`   ${icon} ${res.bridgeNode} · pkt ${res.packetId} → ${res.outcome}`
+                + (res.reason ? ` (${res.reason})` : '')
+                + (res.transactionId > 0 ? ` · txn#${res.transactionId}` : ''));
+        });
+        await refresh();
+    } catch (e) {
+        showError('Flush failed: ' + e.message);
+    } finally { setLoading(false); }
+}
+
+async function resetMesh() {
+    try {
+        setLoading(true);
+        await fetch('/api/mesh/reset', {method: 'POST'});
+        log('🗑  Mesh devices cleared + idempotency cache wiped');
+        await refresh();
+    } catch (e) {
+        showError('Reset failed: ' + e.message);
+    } finally { setLoading(false); }
+}
+
+// Initial load + auto-refresh every 3 seconds
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>
